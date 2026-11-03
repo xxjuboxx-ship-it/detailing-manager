@@ -141,6 +141,7 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 const $ = id => document.getElementById(id);
 let records=[];
+let todos=[];
 let editing=null;
 let channel=null;
 
@@ -198,9 +199,56 @@ async function deleteRecord(id){
 }
 async function startRealtime(){
  if(channel)await db.removeChannel(channel);
- channel=db.channel('realizacje-live')
+ channel=db.channel('detailing-live')
  .on('postgres_changes',{event:'*',schema:'public',table:'realizacje'},load)
+ .on('postgres_changes',{event:'*',schema:'public',table:'do_zrobienia'},loadTodos)
  .subscribe();
+}
+function showTab(tab){
+ const isTodo=tab==='todo';
+ $('todoSection').classList.toggle('hidden',!isTodo);
+ $('doneSection').classList.toggle('hidden',isTodo);
+ $('tabTodo').classList.toggle('secondary',!isTodo);
+ $('tabDone').classList.toggle('secondary',isTodo);
+ if(isTodo) loadTodos();
+}
+async function loadTodos(){
+ const {data,error}=await db.from('do_zrobienia').select('*').order('data',{ascending:true}).order('godzina',{ascending:true});
+ if(error){$('todoRecords').textContent='Błąd pobierania zleceń: '+error.message;return}
+ todos=data||[];
+ renderTodos();
+}
+function renderTodos(){
+ const root=$('todoRecords');
+ root.replaceChildren();
+ if(!todos.length){root.textContent='Brak umówionych samochodów.';return}
+ todos.forEach(r=>{
+  const item=document.createElement('div');item.className='entry';
+  const info=document.createElement('div');
+  const name=document.createElement('strong');name.textContent=r.marka+' '+r.model;
+  const details=document.createElement('div');details.className='muted';details.textContent=r.pakiet+' · '+r.data+' · '+r.godzina;
+  info.append(name,details);
+  const actions=document.createElement('div');
+  const done=document.createElement('button');done.textContent='Zrealizuj';done.style.width='auto';done.onclick=()=>completeTodo(r);
+  const del=document.createElement('button');del.className='danger';del.textContent='Usuń';del.onclick=()=>deleteTodo(r.id);
+  actions.append(done,del);item.append(info,actions);root.append(item);
+ });
+}
+async function completeTodo(r){
+ const answer=prompt('Podaj kwotę za wykonaną usługę (zł):','');
+ if(answer===null)return;
+ const amount=Number(answer.replace(',','.'));
+ if(!Number.isFinite(amount)||amount<0){alert('Wpisz prawidłową kwotę.');return}
+ const {error:insertError}=await db.from('realizacje').insert({pakiet:r.pakiet,marka:r.marka,model:r.model,data:r.data,godzina:r.godzina,kwota:amount});
+ if(insertError){alert('Nie udało się zapisać realizacji: '+insertError.message);return}
+ const {error:deleteError}=await db.from('do_zrobienia').delete().eq('id',r.id);
+ if(deleteError){alert('Usługa została dodana do historii, ale nie udało się usunąć jej z listy zleceń: '+deleteError.message);}
+ await load();await loadTodos();
+}
+async function deleteTodo(id){
+ if(!confirm('Usunąć to zlecenie?'))return;
+ const {error}=await db.from('do_zrobienia').delete().eq('id',id);
+ if(error)alert(error.message);else await loadTodos();
 }
 async function login(){
  $('loginMsg').textContent='Logowanie...';
@@ -210,6 +258,24 @@ async function login(){
 }
 $('loginBtn').onclick=login;
 $('password').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+$('tabDone').onclick=()=>showTab('done');
+$('tabTodo').onclick=()=>showTab('todo');
+$('todoForm').onsubmit=async e=>{
+  e.preventDefault();
+  $('todoMsg').textContent='Zapisywanie zlecenia...';
+  const item={
+    pakiet:$('todoPakiet').value,
+    marka:$('todoMarka').value.trim(),
+    model:$('todoModel').value.trim(),
+    data:$('todoData').value,
+    godzina:$('todoGodzina').value
+  };
+  const {error}=await db.from('do_zrobienia').insert(item);
+  if(error){$('todoMsg').textContent='Błąd: '+error.message;return}
+  $('todoForm').reset();
+  $('todoMsg').textContent='Dodano samochód do listy!';
+  await loadTodos();
+};
 $('logout').onclick=async()=>{
  if(channel)await db.removeChannel(channel);
  await db.auth.signOut();showApp(false);
@@ -241,15 +307,16 @@ $('csv').onclick=()=>{
 async function init(){
  const {data}=await db.auth.getSession();
  if(data.session){
-  showApp(true);await load();startRealtime();
+  showApp(true);await load();await loadTodos();startRealtime();
  }else showApp(false);
 }
 db.auth.onAuthStateChange((event,session)=>{
- if(event==='SIGNED_IN'&&session){showApp(true);setTimeout(()=>{load();startRealtime()},0)}
+ if(event==='SIGNED_IN'&&session){showApp(true);setTimeout(()=>{load();loadTodos();startRealtime()},0)}
  if(event==='SIGNED_OUT'){showApp(false)}
 });
 init();
 const now=new Date();
+$('todoData').value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
 $('data').value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
 $('godzina').value=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
 </script>
