@@ -1,0 +1,209 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detailing Manager</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#10141c;color:#f5f6fa;font-family:Arial,sans-serif;padding:20px}
+main{max-width:760px;margin:auto}
+h1{font-size:27px;margin-bottom:5px}
+.sub{color:#9ba5b5;margin-bottom:24px}
+.card{background:#1c2431;border:1px solid #303b4b;border-radius:15px;padding:18px;margin:15px 0}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat{background:#222e40;padding:16px;border-radius:12px}
+.stat small{color:#aab5c6}
+.stat strong{display:block;font-size:24px;margin-top:8px}
+input,select,button{width:100%;padding:13px;border-radius:9px;border:1px solid #46536a;background:#121a27;color:white;font-size:15px;margin:6px 0 13px}
+button{background:#20a878;border:0;font-weight:bold;cursor:pointer}
+button.secondary{background:#34445a}
+button.danger{background:#873e47;width:auto;padding:9px}
+label{font-size:13px;color:#c1ccda}
+.entry{border-bottom:1px solid #394354;padding:13px 0;display:flex;justify-content:space-between;gap:10px}
+.entry:last-child{border:0}
+.muted{color:#aab5c6;font-size:13px;margin-top:5px}
+.price{font-weight:bold;color:#55d6a2;white-space:nowrap}
+.hidden{display:none!important}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.top button{width:auto}
+@media(max-width:430px){body{padding:13px}.row{gap:6px}}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+ <div><h1>🚘 Detailing Manager</h1><div class="sub">Panel zarządzania detailingiem</div></div>
+ <button id="logout" class="secondary hidden">Wyloguj</button>
+</header>
+
+<section id="login" class="card">
+ <h2>Logowanie</h2>
+ <label>E-mail</label>
+ <input id="email" type="email" placeholder="Wasz wspólny e-mail">
+ <label>Hasło</label>
+ <input id="password" type="password" placeholder="Wasze wspólne hasło">
+ <button id="loginBtn">Zaloguj się</button>
+ <p id="loginMsg" class="muted"></p>
+</section>
+
+<section id="app" class="hidden">
+ <div class="stats">
+  <div class="stat"><small>Wykonane usługi</small><strong id="count">0</strong></div>
+  <div class="stat"><small>Łączny zarobek</small><strong id="total">0 zł</strong></div>
+ </div>
+ <div class="card">
+  <h2>➕ Nowa realizacja</h2>
+  <form id="form">
+   <label>Pakiet</label>
+   <select id="pakiet"><option>Pakiet 1</option><option>Pakiet 2</option></select>
+   <div class="row">
+    <div><label>Marka auta</label><input id="marka" placeholder="BMW" required></div>
+    <div><label>Model auta</label><input id="model" placeholder="Seria 3" required></div>
+   </div>
+   <div class="row">
+    <div><label>Dzień</label><input id="data" type="date" required></div>
+    <div><label>Godzina</label><input id="godzina" type="time" required></div>
+   </div>
+   <label>Kwota (zł)</label>
+   <input id="kwota" type="number" min="0" step="0.01" placeholder="350" required>
+   <button type="submit" id="save">Zapisz realizację</button>
+   <button type="button" id="cancel" class="secondary hidden">Anuluj edycję</button>
+   <p id="msg" class="muted"></p>
+  </form>
+ </div>
+ <div class="card">
+  <h2>📊 Statystyki pakietów</h2>
+  <p id="packages" class="muted"></p>
+ </div>
+ <div class="card">
+  <div class="top"><h2>📋 Historia usług</h2><button id="csv" class="secondary">CSV ↓</button></div>
+  <input id="search" placeholder="Szukaj marki lub modelu...">
+  <div id="records"></div>
+ </div>
+ <p class="muted">Synchronizacja z drugiego telefonu odbywa się automatycznie.</p>
+</section>
+</main>
+<script>
+const URL = "https://qhxrtjmuiweqtmlekteb.supabase.co";
+const KEY = "sb_publishable_4iAilucXxr0JaDZI9O5mgQ_h28J9SGG";
+const db = supabase.createClient(URL,KEY);
+const $ = id => document.getElementById(id);
+let records=[];
+let editing=null;
+let channel=null;
+
+function money(n){return Number(n).toLocaleString('pl-PL',{minimumFractionDigits:2,maximumFractionDigits:2})+' zł'}
+function showApp(on){
+ $('login').classList.toggle('hidden',on);
+ $('app').classList.toggle('hidden',!on);
+ $('logout').classList.toggle('hidden',!on);
+}
+async function load(){
+ const {data,error}=await db.from('realizacje').select('*').order('data',{ascending:false}).order('godzina',{ascending:false});
+ if(error){$('msg').textContent=error.message;return}
+ records=data||[];
+ render();
+}
+function render(){
+ const total=records.reduce((s,r)=>s+Number(r.kwota),0);
+ $('count').textContent=records.length;
+ $('total').textContent=money(total);
+ const p1=records.filter(r=>r.pakiet==='Pakiet 1');
+ const p2=records.filter(r=>r.pakiet==='Pakiet 2');
+ $('packages').textContent=`Pakiet 1: ${p1.length} usług (${money(p1.reduce((s,r)=>s+Number(r.kwota),0))}) · Pakiet 2: ${p2.length} usług (${money(p2.reduce((s,r)=>s+Number(r.kwota),0))})`;
+ $('records').replaceChildren();
+ const term=$('search').value.toLowerCase();
+ const filtered=records.filter(r=>(r.marka+' '+r.model).toLowerCase().includes(term));
+ if(!filtered.length){$('records').textContent='Brak realizacji.';return}
+ filtered.forEach(r=>{
+  const item=document.createElement('div');item.className='entry';
+  const info=document.createElement('div');
+  const name=document.createElement('strong');name.textContent=r.marka+' '+r.model;
+  const details=document.createElement('div');details.className='muted';details.textContent=r.pakiet+' · '+r.data+' · '+r.godzina;
+  const price=document.createElement('div');price.className='price';price.textContent=money(r.kwota);
+  info.append(name,details,price);
+  const actions=document.createElement('div');
+  const edit=document.createElement('button');edit.className='secondary';edit.textContent='Edytuj';edit.style.width='auto';edit.onclick=()=>editRecord(r);
+  const del=document.createElement('button');del.className='danger';del.textContent='Usuń';del.onclick=()=>deleteRecord(r.id);
+  actions.append(edit,del);item.append(info,actions);$('records').append(item);
+ });
+}
+function editRecord(r){
+ editing=r.id;
+ $('pakiet').value=r.pakiet;$('marka').value=r.marka;$('model').value=r.model;
+ $('data').value=r.data;$('godzina').value=r.godzina;$('kwota').value=r.kwota;
+ $('save').textContent='Zapisz zmiany';$('cancel').classList.remove('hidden');
+ window.scrollTo({top:0,behavior:'smooth'});
+}
+function resetForm(){
+ editing=null;$('form').reset();$('save').textContent='Zapisz realizację';
+ $('cancel').classList.add('hidden');
+}
+async function deleteRecord(id){
+ if(!confirm('Czy na pewno usunąć realizację?'))return;
+ const {error}=await db.from('realizacje').delete().eq('id',id);
+ if(error)alert(error.message);else await load();
+}
+async function startRealtime(){
+ if(channel)await db.removeChannel(channel);
+ channel=db.channel('realizacje-live')
+ .on('postgres_changes',{event:'*',schema:'public',table:'realizacje'},load)
+ .subscribe();
+}
+async function login(){
+ $('loginMsg').textContent='Logowanie...';
+ const {error}=await db.auth.signInWithPassword({email:$('email').value,password:$('password').value});
+ if(error){$('loginMsg').textContent=error.message;return}
+ $('loginMsg').textContent='';
+}
+$('loginBtn').onclick=login;
+$('password').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+$('logout').onclick=async()=>{
+ if(channel)await db.removeChannel(channel);
+ await db.auth.signOut();showApp(false);
+};
+$('cancel').onclick=resetForm;
+$('search').oninput=render;
+$('form').onsubmit=async e=>{
+ e.preventDefault();
+ $('msg').textContent='Zapisywanie...';
+ const item={
+  pakiet:$('pakiet').value,marka:$('marka').value.trim(),
+  model:$('model').value.trim(),data:$('data').value,
+  godzina:$('godzina').value,kwota:Number($('kwota').value)
+ };
+ const result=editing
+ ?await db.from('realizacje').update(item).eq('id',editing)
+ :await db.from('realizacje').insert(item);
+ if(result.error){$('msg').textContent='Błąd: '+result.error.message;return}
+ $('msg').textContent='Zapisano!';
+ resetForm();await load();
+};
+$('csv').onclick=()=>{
+ const rows=[['Pakiet','Marka','Model','Data','Godzina','Kwota'],...records.map(r=>[r.pakiet,r.marka,r.model,r.data,r.godzina,r.kwota])];
+ const csv='\uFEFF'+rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+ a.download='detailing-realizacje.csv';a.click();URL.revokeObjectURL(a.href);
+};
+async function init(){
+ const {data}=await db.auth.getSession();
+ if(data.session){
+  showApp(true);await load();startRealtime();
+ }else showApp(false);
+}
+db.auth.onAuthStateChange((event,session)=>{
+ if(event==='SIGNED_IN'&&session){showApp(true);setTimeout(()=>{load();startRealtime()},0)}
+ if(event==='SIGNED_OUT'){showApp(false)}
+});
+init();
+const now=new Date();
+$('data').value=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+$('godzina').value=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+</script>
+</body>
+</html>
