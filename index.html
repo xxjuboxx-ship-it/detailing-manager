@@ -51,6 +51,47 @@ label{font-size:13px;color:#c1ccda}
 </section>
 
 <section id="app" class="hidden">
+ <div class="row">
+  <button type="button" id="tabDone">Zrobione</button>
+  <button type="button" id="tabTodo" class="secondary">Do zrobienia</button>
+</div>
+
+<section id="todoSection" class="card hidden">
+  <h2>📅 Do zrobienia</h2>
+  <form id="todoForm">
+    <label>Pakiet</label>
+    <select id="todoPakiet">
+      <option>Pakiet 1</option>
+      <option>Pakiet 2</option>
+    </select>
+    <div class="row">
+      <div>
+        <label>Marka</label>
+        <input id="todoMarka" required placeholder="BMW">
+      </div>
+      <div>
+        <label>Model</label>
+        <input id="todoModel" required placeholder="Seria 3">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Termin – dzień</label>
+        <input id="todoData" type="date" required>
+      </div>
+      <div>
+        <label>Godzina</label>
+        <input id="todoGodzina" type="time" required>
+      </div>
+    </div>
+    <button type="submit">Dodaj do zrobienia</button>
+    <p id="todoMsg" class="muted"></p>
+  </form>
+  <h3>Umówione samochody</h3>
+  <div id="todoRecords"></div>
+</section>
+
+<div id="doneSection">
  <div class="stats">
   <div class="stat"><small>Wykonane usługi</small><strong id="count">0</strong></div>
   <div class="stat"><small>Łączny zarobek</small><strong id="total">0 zł</strong></div>
